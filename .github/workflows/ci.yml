@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Conn3x
+        env: &gh
+          GH_TOKEN: ${{ github.token }}
+        run: &install |
+          tag=$(gh release view -R conn3xorg/conn3x --json tagName -q .tagName)
+          file="conn3x_${tag#v}_linux_amd64.tar.gz"
+          cd "$RUNNER_TEMP"
+          curl -sSfLO "https://github.com/conn3xorg/conn3x/releases/download/$tag/$file"
+          curl -sSfLO "https://github.com/conn3xorg/conn3x/releases/download/$tag/checksums.txt"
+          grep " $file\$" checksums.txt | sha256sum -c -
+          mkdir -p bin && tar -xzf "$file" -C bin conn3x
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - run: conn3x version
+      - run: conn3x fmt -check -recursive
+      - name: Validate
+        run: conn3x init -backend=false && conn3x validate
+      - name: Validate the example
+        working-directory: examples/local
+        run: conn3x init -backend=false && conn3x validate
+
+  e2e:
+    needs: validate
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [rocky10, fedora45, ubuntu2404, debian13]
+    name: e2e (${{ matrix.distro }})
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The test host images live in the Conn3x repo.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: conn3xorg/conn3x
+          ref: main
+          path: conn3x
+          persist-credentials: false
+          sparse-checkout: test/images
+      - name: Install Conn3x
+        env: *gh
+        run: *install
+      - name: Start two ${{ matrix.distro }} hosts
+        working-directory: examples/local
+        env:
+          CONTAINERFILE: ${{ github.workspace }}/conn3x/test/images/${{ matrix.distro }}/Containerfile
+          # keepalived adds addresses to eth0, so the hosts are privileged.
+          PODMAN: sudo podman
+        run: ./up.sh
+      - name: Apply, then plan again with no changes
+        working-directory: examples/local
+        run: |
+          conn3x init
+          conn3x apply -auto-approve
+          conn3x plan -detailed-exitcode
+      # a has the higher priority. Stopping keepalived on it, or failing its
+      # track script, moves the address to b; undoing either moves it back.
+      - name: Check the floating address fails over and comes back
+        run: |
+          vip=10.226.61.100
+          holds() {
+            for _ in $(seq 20); do
+              if sudo podman exec "circuit-keepalived-$1" grep -qw "$vip" /proc/net/fib_trie &&
+                ! sudo podman exec "circuit-keepalived-$2" grep -qw "$vip" /proc/net/fib_trie; then
+                echo "$vip is on $1"; return 0
+              fi
+              sleep 0.5
+            done
+            echo "$vip didn't move to $1" >&2; exit 1
+          }
+          holds a b
+          for h in a b; do sudo podman exec "circuit-keepalived-$h" sysctl -n net.ipv4.ip_nonlocal_bind | grep -qx 1; done
+          sudo podman exec circuit-keepalived-a systemctl stop keepalived
+          holds b a
+          sudo podman exec circuit-keepalived-a systemctl start keepalived
+          holds a b
+          sudo podman exec circuit-keepalived-a touch /etc/keepalived/maintenance
+          holds b a
+          sudo podman exec circuit-keepalived-a rm /etc/keepalived/maintenance
+          holds a b
+      - name: With nopreempt, the address stays on b when a comes back
+        working-directory: examples/local
+        run: |
+          conn3x apply -auto-approve -var nopreempt=true
+          conn3x plan -detailed-exitcode -var nopreempt=true
+          vip=10.226.61.100
+          on() { sudo podman exec "circuit-keepalived-$1" grep -qw "$vip" /proc/net/fib_trie; }
+          sudo podman exec circuit-keepalived-a grep -qx '    nopreempt' /etc/keepalived/keepalived.conf
+          for _ in $(seq 20); do on a && break; sleep 0.5; done
+          on a
+          sudo podman exec circuit-keepalived-a systemctl stop keepalived
+          for _ in $(seq 20); do on b && break; sleep 0.5; done
+          on b
+          sudo podman exec circuit-keepalived-a systemctl start keepalived
+          sleep 8
+          on b && ! on a
+      - name: Clean up
+        if: always()
+        working-directory: examples/local
+        env:
+          PODMAN: sudo podman
+        run: ./down.sh
