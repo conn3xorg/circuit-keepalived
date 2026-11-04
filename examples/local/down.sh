@@ -3,7 +3,7 @@
 # created here.
 set -eu
 cd "$(dirname "$0")"
-name=${NAME:-circuit-keepalived}
+name=${CONTAINER_NAME:-circuit-keepalived}
 podman=${PODMAN:-podman}
 $podman rm -f -v "$name-a" "$name-b" >/dev/null 2>&1 || true
 $podman network rm "$name" >/dev/null 2>&1 || true
