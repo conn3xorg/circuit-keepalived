@@ -25,6 +25,6 @@ Within a few seconds of the stop, the address is on `b`; after the start it goes
 
 `up.sh` puts both containers on a Podman network of their own, `10.226.61.0/24`, and writes each one's address there to `up.auto.tfvars`. Conn3x logs in through port forwards on `127.0.0.1`, which the containers can't use to reach each other, so `main.tf` passes those addresses as each host's `vrrp_address`.
 
-`up.sh` listens on `127.0.0.1:2222` for `a` and `2223` for `b`. Set `PORT` and `PORT_B` to use other ports, and `NAME` to change the containers' and network's name from `circuit-keepalived`. Set `CONTAINERFILE` to test another distro, such as one of the images in Conn3x's `test/images`, which CI uses.
+`up.sh` listens on `127.0.0.1:2222` for `a` and `2223` for `b`. Set `PORT` and `PORT_B` to use other ports, and `CONTAINER_NAME` to change the containers' and network's name from `circuit-keepalived`. Set `CONTAINERFILE` to test another distro, such as one of the images in Conn3x's `test/images`, which CI uses.
 
 `./down.sh` removes the containers, their volumes and network, the key and the state.
