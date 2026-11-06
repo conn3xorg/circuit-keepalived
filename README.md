@@ -105,7 +105,7 @@ Requires Conn3x v0.6.7 or later and systemd on each host, with a package mirror 
 
 ## Tested on
 
-Rocky Linux 10 (keepalived 2.2.8), Fedora 45 (2.3.4), Ubuntu 24.04 (2.2.8) and Debian 13 (2.3.3). CI applies [examples/local](examples/local) to two hosts of each on amd64, checks that the second plan has no changes, checks the floating address is on the first host, moves to the second when keepalived stops and when the track script fails, and comes back each time. It then applies with `nopreempt` and checks the address stays put when the first host returns.
+Rocky Linux 10 (keepalived 2.2.8), Fedora 45 (2.3.4), Ubuntu 24.04 (2.2.8) and Debian 13 (2.3.3). CI applies [examples/local](examples/local) to two hosts of each on amd64, checks that the second plan has no changes, checks the floating address is on the first host, moves to the second when keepalived stops and when the track script fails, and comes back each time. Restarting keepalived on the first host hands the address back to it, with the plan still empty. It then applies with `nopreempt` and checks the address stays put when the first host returns.
 
 On two Ubuntu 24.04 droplets in one DigitalOcean VPC, VRRP ran between their private addresses on `eth1` with an unused VPC address as the floating one: the first droplet held it, it moved to the second when keepalived stopped and when the track script failed, and it came back each time. After both rebooted, the first held it again and the plan had no changes. Other machines couldn't reach the floating address there, as [Cloud floating IPs](#cloud-floating-ips) describes.
 
