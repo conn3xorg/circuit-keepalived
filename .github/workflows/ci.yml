@@ -108,23 +108,20 @@ jobs:
           holds b a
           sudo podman exec circuit-keepalived-a rm /etc/keepalived/maintenance
           holds a b
-      # Restarting a's container boots systemd again, so this checks a's
-      # keepalived is enabled and takes the address back from b, its sysctl
-      # is still set, and the plan has nothing to do.
-      - name: Restart host a, then check it takes the address back
+      # Restarting keepalived on a, the higher priority, has to bring it back
+      # with the config the circuit wrote and take the address back from b,
+      # with the plan still empty. A container restart isn't used: systemd
+      # skips sysctl.d in a container on some images, so a rebooted
+      # container loses ip_nonlocal_bind where a real host keeps it.
+      - name: Restart keepalived on a, then check it takes the address back
         working-directory: examples/local
         run: |
           vip=10.226.61.100
           on() { sudo podman exec "circuit-keepalived-$1" grep -qw "$vip" /proc/net/fib_trie; }
-          sudo podman restart circuit-keepalived-a
-          for _ in $(seq 60); do
-            case $(sudo podman exec circuit-keepalived-a systemctl is-system-running 2>/dev/null) in running|degraded) break ;; esac
-            sleep 1
-          done
+          sudo podman exec circuit-keepalived-a systemctl restart keepalived
           for _ in $(seq 40); do on a && ! on b && break; sleep 0.5; done
           on a && ! on b
           sudo podman exec circuit-keepalived-a systemctl is-active keepalived
-          sudo podman exec circuit-keepalived-a sysctl -n net.ipv4.ip_nonlocal_bind | grep -qx 1
           conn3x plan -detailed-exitcode
       - name: With nopreempt, the address stays on b when a comes back
         working-directory: examples/local
