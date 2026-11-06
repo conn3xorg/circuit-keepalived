@@ -10,7 +10,7 @@ The usual case is a pair of HAProxy or nginx boxes in front of everything else. 
 
 ```hcl
 module "keepalived" {
-  source = "github.com/conn3xorg/circuit-keepalived?ref=v0.1.1"
+  source = "github.com/conn3xorg/circuit-keepalived?ref=v0.1.2"
 
   hosts = {
     lb1 = { address = "203.0.113.10", vrrp_address = "10.0.0.11" }
