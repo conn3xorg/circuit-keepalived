@@ -94,6 +94,7 @@ circuit "keepalived_interface" {
   }
 
   step "default" {
+    # conn3x-lint:ignore C3X101 reads the default route's interface once by design; its stdout is the value, and setting interface skips it
     command {
       command = "awk '$2 == \"00000000\" { print $1; exit }' /proc/net/route | grep ."
     }
